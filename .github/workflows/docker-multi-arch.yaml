@@ -83,8 +83,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ inputs.image_build_args }}
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=registry,ref=${{ inputs.oci_repository }}:cache-${{ env.PLATFORM_PAIR }}-$default-branch
+            type=registry,ref=${{ inputs.oci_repository }}:cache-${{ env.PLATFORM_PAIR }}-${{ github.ref_name }}
+          cache-to: |
+            type=registry,ref=${{ inputs.oci_repository }}:cache-${{ env.PLATFORM_PAIR }}-${{ github.ref_name }},"mode=max"
           outputs: type=image,"name=${{ inputs.oci_repository }}",push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
