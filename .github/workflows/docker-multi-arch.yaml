@@ -21,6 +21,12 @@ on:
       image-build-args:
         required: false
         type: string
+
+    outputs:
+      digest:
+        description: "Digest of the built image"
+        value: ${{ jobs.merge.outputs.digest }}
+
 jobs:
   build:
     strategy:
@@ -106,6 +112,8 @@ jobs:
 
   merge:
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.inspect.outputs.digest }}
     needs:
       - build
     steps:
@@ -146,5 +154,8 @@ jobs:
             $(printf '${{ inputs.oci_repository }}@sha256:%s ' *)
 
       - name: Inspect image
+        id: inspect
         run: |
           docker buildx imagetools inspect ${{ inputs.oci_repository }}:${{ steps.meta.outputs.version }}
+          digest=$(docker buildx imagetools inspect ${{ inputs.oci_repository }}:${{ steps.meta.outputs.version }} --format "{{json .Manifest}}" | jq -r '.digest')
+          echo "digest=${digest}" >> $GITHUB_OUTPUT
