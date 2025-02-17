@@ -36,7 +36,16 @@ on:
         value: ${{ jobs.merge.outputs.version }}
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      uuid: ${{ steps.uuid.outputs.uuid }}
+    steps:
+      - name: Generate UUID for a unique artifact prefix within workflow
+        id: uuid
+        run: echo "uuid=$(uuidgen)" >> $GITHUB_OUTPUT
   build:
+    needs: [ setup ]
     strategy:
       fail-fast: false
       matrix:
@@ -113,7 +122,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
+          name: digests-${{ needs.setup.outputs.uuid }}-${{ env.PLATFORM_PAIR }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -124,13 +133,14 @@ jobs:
       digest: ${{ steps.inspect.outputs.digest }}
       version: ${{ steps.meta.outputs.version }}
     needs:
+      - setup
       - build
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          pattern: digests-${{ needs.setup.outputs.uuid }}-*
           merge-multiple: true
 
       - name: Log into registry ghcr.io
