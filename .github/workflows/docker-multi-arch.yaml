@@ -15,7 +15,10 @@ on:
         required: false
         type: string
         default: "."
-      image_metadata_flavor:
+      image-metadata-flavor:
+        required: false
+        type: string
+      image-build-args:
         required: false
         type: string
 jobs:
@@ -78,6 +81,7 @@ jobs:
           file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform.docker_platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ inputs.image_build_args }}
           provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
