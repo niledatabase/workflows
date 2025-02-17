@@ -26,6 +26,9 @@ on:
       image-build-args:
         required: false
         type: string
+      image-target:
+        required: false
+        type: string
 
     outputs:
       digest:
@@ -105,6 +108,7 @@ jobs:
           platforms: ${{ matrix.platform.docker_platform }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ inputs.image-build-args }}
+          target: ${{ inputs.image-target }}
           provenance: false
           cache-from: |
             type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-$default-branch
