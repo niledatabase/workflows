@@ -63,6 +63,7 @@ jobs:
           file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform.docker_platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
           outputs: type=image,"name=${{ inputs.oci_repository }}",push-by-digest=true,name-canonical=true,push=true
