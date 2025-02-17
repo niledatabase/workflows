@@ -15,7 +15,9 @@ on:
         required: false
         type: string
         default: "."
-
+      image_metadata_flavor:
+        required: false
+        type: string
 jobs:
   build:
     strategy:
@@ -121,6 +123,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
+          flavor: ${{ inputs.image_metadata_flavor }}
           images: |
             ${{ inputs.oci_repository }}
           tags: |
