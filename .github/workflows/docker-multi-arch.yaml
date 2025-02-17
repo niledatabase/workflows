@@ -130,7 +130,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          flavor: ${{ inputs.image_metadata_flavor }}
+          flavor: ${{ inputs.image-metadata-flavor }}
           images: |
             ${{ inputs.oci_repository }}
           tags: |
