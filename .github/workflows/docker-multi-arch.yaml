@@ -92,7 +92,7 @@ jobs:
           file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform.docker_platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: ${{ inputs.image_build_args }}
+          build-args: ${{ inputs.image-build-args }}
           provenance: false
           cache-from: |
             type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-$default-branch
