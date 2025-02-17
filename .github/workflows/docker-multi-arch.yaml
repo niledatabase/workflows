@@ -31,6 +31,9 @@ on:
       digest:
         description: "Digest of the built image"
         value: ${{ jobs.merge.outputs.digest }}
+      version:
+        description: "Version of the built image"
+        value: ${{ jobs.merge.outputs.version }}
 
 jobs:
   build:
@@ -119,6 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       digest: ${{ steps.inspect.outputs.digest }}
+      version: ${{ steps.meta.outputs.version }}
     needs:
       - build
     steps:
