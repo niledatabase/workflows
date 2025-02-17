@@ -15,9 +15,14 @@ on:
         required: false
         type: string
         default: "."
-      image-metadata-flavor:
+      image-metadata-tags:
         required: false
         type: string
+        default: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{raw}}
+          type=sha
       image-build-args:
         required: false
         type: string
@@ -138,15 +143,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          flavor: ${{ inputs.image-metadata-flavor }}
           images: |
             ${{ inputs.oci_repository }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{raw}}
-            type=sha
-
+          tags: ${{ inputs.image-metadata-tags }}
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
         run: |
