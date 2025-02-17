@@ -4,7 +4,8 @@ on:
   workflow_call:
     inputs:
       dockerfile:
-        required: true
+        required: false
+        default: Dockerfile
         type: string
       oci_repository:
         required: false
