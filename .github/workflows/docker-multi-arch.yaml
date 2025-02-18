@@ -76,7 +76,7 @@ jobs:
           if [[ "${{ github.ref_type }}" == "branch" ]]; then
             branch=${{ github.ref_name }}
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            branch=$(git branch -r --contains ${{ github.sha}} --format "%(refname:short)" | grep -v "HEAD" | head -n 1 | sed 's/origin\///')
+            branch=$(git branch -r --contains ${{ github.sha}} --format "%(refname:short)" | grep -v "HEAD" | grep -v '^origin$' | head -n 1 | sed 's/origin\///')
           fi
           
           if [[ -z "$branch" ]]; then
