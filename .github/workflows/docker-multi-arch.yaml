@@ -113,7 +113,7 @@ jobs:
           target: ${{ inputs.image-target }}
           provenance: false
           cache-from: type=registry,ref=${{ inputs.oci_repository }}:cache
-          cache-to: ype=registry,ref=${{ inputs.oci_repository }}:cache,mode=max
+          cache-to: type=registry,ref=${{ inputs.oci_repository }}:cache,mode=max
           outputs: type=image,"name=${{ inputs.oci_repository }}",push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
