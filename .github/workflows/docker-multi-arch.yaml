@@ -117,7 +117,7 @@ jobs:
             // Conditionally include the suffix
             let cacheKey
             if (suffix && suffix.trim().length > 0) {
-              cacheKey = `cache-${suffix}-${sanitizedPlatform}`
+              cacheKey = `cache-${sanitizedPlatform}-${suffix}`
             } else {
               cacheKey = `cache-${sanitizedPlatform}`
             }
