@@ -33,6 +33,10 @@ on:
         required: false
         type: string
         default: '[{"docker_platform":"linux/arm64","runner":"full-ubuntu-arm-4-core"},{"docker_platform":"linux/amd64","runner":"ubuntu-latest-4core"}]'
+      cache-suffix:
+        required: false
+        type: string
+        default: ''
 
     outputs:
       digest:
@@ -112,8 +116,8 @@ jobs:
           build-args: ${{ inputs.image-build-args }}
           target: ${{ inputs.image-target }}
           provenance: false
-          cache-from: type=registry,ref=${{ inputs.oci_repository }}:cache
-          cache-to: type=registry,ref=${{ inputs.oci_repository }}:cache,mode=max
+          cache-from: type=registry,ref=${{ inputs.oci_repository }}:cache${{ inputs.cache-suffix }}
+          cache-to: type=registry,ref=${{ inputs.oci_repository }}:cache${{ inputs.cache-suffix }},mode=max
           outputs: type=image,"name=${{ inputs.oci_repository }}",push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
