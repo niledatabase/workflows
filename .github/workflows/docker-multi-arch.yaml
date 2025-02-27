@@ -32,7 +32,7 @@ on:
       platforms:
         required: false
         type: string
-        default: '[{"docker_platform":"linux/arm64","runner":"full-ubuntu-arm-4-core"},{"docker_platform":"linux/amd64","runner":"ubuntu-latest-4core"}]'
+        default: '[{"docker_platform":"linux/arm64","runner":"ubuntu-arm-2-core"},{"docker_platform":"linux/amd64","runner":"ubuntu-2-core"}]'
       cache-suffix:
         required: false
         type: string
