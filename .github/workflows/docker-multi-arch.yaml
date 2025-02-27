@@ -29,6 +29,10 @@ on:
       image-target:
         required: false
         type: string
+      cache-key-suffix:
+        required: false
+        type: string
+        default: ''
 
     outputs:
       digest:
@@ -84,8 +88,8 @@ jobs:
             branch=$default_branch
           fi
           
-          cache_to="type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-${branch},mode=max"
-          cache_from="type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-${branch}"
+          cache_to="type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-${branch}${{ inputs.cache-key-suffix }},mode=max"
+          cache_from="type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-${branch}${{ inputs.cache-key-suffix }}"
           
           if [[ "$branch" != "$default_branch" ]]; then
             cache_from+=$'\n'"type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-${default_branch}"
