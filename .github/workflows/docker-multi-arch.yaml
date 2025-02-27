@@ -29,7 +29,11 @@ on:
       image-target:
         required: false
         type: string
-      cache-key-suffix:
+      platforms:
+        required: false
+        type: string
+        default: '[{"docker_platform":"linux/arm64","runner":"full-ubuntu-arm-4-core"},{"docker_platform":"linux/amd64","runner":"ubuntu-latest-4core"}]'
+      cache-suffix:
         required: false
         type: string
         default: ''
@@ -56,55 +60,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - docker_platform: linux/arm64
-            runner: full-ubuntu-arm-4-core
-          - docker_platform: linux/amd64
-            runner: ubuntu-latest-4core
+        platform: ${{ fromJSON(inputs.platforms) }}
     runs-on: ${{ matrix.platform.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: get cache settings for docker
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        id: docker-cache
-        run: |
-          default_branch=$(gh api repos/${{ github.repository}} --jq .default_branch)
-          
-          # Try finding the branch we're on
-          branch=""
-          
-          if [[ "${{ github.ref_type }}" == "branch" ]]; then
-            branch=${{ github.ref_name }}
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            branch=$(git branch -r --contains ${{ github.sha}} --format "%(refname:short)" | grep -v "HEAD" | grep -v '^origin$' | head -n 1 | sed 's/origin\///')
-          fi
-          
-          if [[ -z "$branch" ]]; then
-            echo "Could not determine branch, using default branch $default_branch"
-            branch=$default_branch
-          fi
-          
-          cache_to="type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-${branch}${{ inputs.cache-key-suffix }},mode=max"
-          cache_from="type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-${branch}${{ inputs.cache-key-suffix }}"
-          
-          if [[ "$branch" != "$default_branch" ]]; then
-            cache_from+=$'\n'"type=registry,ref=${{ inputs.oci_repository }}:cache-${{ matrix.platform.runner }}-${default_branch}"
-          fi
-          
-          echo "cache_from<<EOF" >> $GITHUB_OUTPUT
-          echo "$cache_from" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          echo "cache_to<<EOF" >> $GITHUB_OUTPUT
-          echo "$cache_to" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          echo "cache_from:${cache_from}"
-          echo "cache_to:${cache_to}"
 
       - name: Get Git commit timestamps
         run: echo "TIMESTAMP=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
@@ -142,6 +103,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Generate cache key
+        id: generate_cache_key
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const suffix = "${{ inputs.cache-suffix }}"   // e.g., "latest" or "" if empty
+            const platform = "${{ matrix.platform.docker_platform }}" // e.g., "linux/amd64"
+
+            // Replace slash (/) with dash (-)
+            const sanitizedPlatform = platform.replace(/\//g, "-")
+
+            // Conditionally include the suffix
+            let cacheKey
+            if (suffix && suffix.trim().length > 0) {
+              cacheKey = `cache-${sanitizedPlatform}-${suffix}`
+            } else {
+              cacheKey = `cache-${sanitizedPlatform}`
+            }
+
+            core.info(`Using cache key: ${cacheKey}`)
+
+            // Set this as a step output
+            core.setOutput("cache_key", cacheKey)
+
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
@@ -155,8 +140,8 @@ jobs:
           build-args: ${{ inputs.image-build-args }}
           target: ${{ inputs.image-target }}
           provenance: false
-          cache-from: ${{ steps.docker-cache.outputs.cache_from }}
-          cache-to: ${{ steps.docker-cache.outputs.cache_to }}
+          cache-from: type=registry,ref=${{ inputs.oci_repository }}:${{ steps.generate_cache_key.outputs.cache_key }}
+          cache-to: type=registry,ref=${{ inputs.oci_repository }}:${{ steps.generate_cache_key.outputs.cache_key }},mode=max
           outputs: type=image,"name=${{ inputs.oci_repository }}",push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
