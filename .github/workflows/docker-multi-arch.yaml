@@ -23,6 +23,7 @@ on:
           type=ref,event=pr
           type=semver,pattern={{raw}}
           type=sha
+          type=sha,format=long
       image-build-args:
         required: false
         type: string
