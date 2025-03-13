@@ -1,0 +1,110 @@
+name: Build multi-arch images
+
+on:
+  workflow_call:
+    inputs:
+      file:
+        required: false
+        default: Dockerfile
+        type: string
+      repository:
+        required: false
+        type: string
+        default: ghcr.io/${{ github.repository }}
+      context:
+        required: false
+        type: string
+        default: "."
+      tags:
+        required: false
+        type: string
+        default: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{raw}}
+          type=sha
+          type=sha,format=long
+      build-args:
+        required: false
+        type: string
+      target:
+        required: false
+        type: string
+      runners:
+        required: false
+        type: string
+        default: '["ubuntu-arm-2-core","ubuntu-2-core"]'
+      cache-suffix:
+        required: false
+        type: string
+        default: ''
+
+    outputs:
+      digest:
+        description: "Digest of the built image"
+        value: ${{ jobs.merge.outputs.digest }}
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      uuid: ${{ steps.uuid.outputs.uuid }}
+    steps:
+      - name: Generate UUID for a unique artifact prefix within workflow
+        id: uuid
+        run: echo "uuid=$(uuidgen)" >> $GITHUB_OUTPUT
+
+  build:
+    needs: [ setup ]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(inputs.runners) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Build image
+        id: build
+        uses: niledatabase/workflows/.github/actions/docker-multi-arch-build@re-usable-action
+        with:
+          repository: ${{ inputs.repository }}
+          tags: ${{ inputs.tags }}
+          context: ${{ inputs.context }}
+          file: ${{ inputs.file }}
+          build-args: ${{ inputs.build-args }}
+          target: ${{ inputs.target }}
+          push-by-digest: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-suffix: ${{ inputs.cache-suffix }}
+
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ needs.setup.outputs.uuid }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.inspect.outputs.digest }}
+    needs:
+      - setup
+      - build
+    steps:
+      - name: Push multi-arch
+        id: push-multi-arch
+        uses: niledatabase/workflows/.github/actions/docker-multi-arch-push@re-usable-action
+        with:
+          repository: ${{ inputs.repository }}
+          tags: ${{ inputs.tags }}
+          artifact-digest-pattern: digests-${{ needs.setup.outputs.uuid }}-*
+          github-token: ${{ secrets.GITHUB_TOKEN }}
