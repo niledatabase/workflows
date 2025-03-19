@@ -1,0 +1,50 @@
+name: Package and publish Helm chart
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        required: true
+        type: string
+      oci_repository:
+        required: false
+        type: string
+        default: ghcr.io/${{ github.repository_owner }}/helm-charts
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: chart version
+        id: chart-version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=0.0.0-sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "3.16.2"
+
+      - name: Get chart name
+        id: chart_name
+        run: |
+          chart_name=$(yq '.name' ${{ inputs.path }}/Chart.yaml)
+          echo "Chart name: ${chart_name}"
+          echo "chart_name=${chart_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Helm login
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | helm registry login ghcr.io -u $ --password-stdin
+
+      - name: Package helm chart
+        run: |
+          helm package --app-version '${{ steps.chart-version.outputs.version }}' --version '${{ steps.chart-version.outputs.version }}' ${{ inputs.path }}
+
+      - name: Push helm chart
+        run: |
+          helm push ${{steps.chart_name.outputs.chart_name}}-${{ steps.chart-version.outputs.version }}.tgz oci://${{ inputs.oci_repository }}

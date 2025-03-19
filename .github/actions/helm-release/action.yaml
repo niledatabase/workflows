@@ -1,0 +1,88 @@
+name: "Package and Publish Helm Chart"
+description: "Builds, packages, and publishes a Helm chart to an OCI registry."
+
+inputs:
+  path:
+    description: "Path to the chart directory."
+    required: true
+  repository:
+    description: "OCI registry to push the chart to."
+    required: false
+    default: "ghcr.io/${{ github.repository_owner }}/helm-charts"
+  tag:
+    description: "Optional chart version override. Defaults to the tag of the workflow run or 0.0.0-sha-<shortSHA> (when not triggered by a tag)."
+    required: false
+    default: ""
+  app_version:
+    description: "Optional app version override. Defaults to the tag of the workflow run or 0.0.0-sha-<shortSHA> (when not triggered by a tag)."
+    required: false
+    default: ""
+  github_token:
+    description: "GitHub token with permissions to push to the OCI registry."
+    required: true
+
+outputs:
+  chart_version:
+    description: "The version used for the chart."
+    value: ${{ steps.chart-version.outputs.version }}
+  chart_name:
+    description: "The name of the chart."
+    value: ${{ steps.chart_name.outputs.chart_name }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Determine Chart Version
+      id: chart-version
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const tagInput = "${{ inputs.tag }}";
+          
+          let version
+          if (tagInput && tagInput.trim()) {
+            // Use the "tag" input if provided
+            version = tagInput.trim()
+          } else if (process.env.GITHUB_REF_TYPE === "tag") {
+            // Fallback to the Git tag if running from a tag
+            version = process.env.GITHUB_REF_NAME
+          } else {
+            // Default if neither is available
+            version = `0.0.0-sha-${process.env.GITHUB_SHA.substring(0, 7)}`
+          }
+          
+          core.setOutput("version", version)
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: "3.16.2"
+
+    - name: Get Chart Name
+      id: chart_name
+      shell: bash
+      run: |
+        chart_name=$(yq '.name' "${{ inputs.path }}/Chart.yaml")
+        echo "chart_name=$chart_name" >> $GITHUB_OUTPUT
+
+    - name: Helm Login
+      shell: bash
+      run: |
+        echo "${{ inputs.github_token }}" | helm registry login ghcr.io -u $ --password-stdin
+
+    - name: Package Helm chart
+      shell: bash
+      env:
+        APP_VERSION: ${{ inputs.app_version != '' && inputs.app_version || steps.chart-version.outputs.version }}
+      run: |
+        helm package \
+          --app-version "${APP_VERSION}" \
+          --version "${{ steps.chart-version.outputs.version }}" \
+          "${{ inputs.path }}"
+
+    - name: Push Helm chart
+      shell: bash
+      run: |
+        helm push \
+          "${{ steps.chart_name.outputs.chart_name }}-${{ steps.chart-version.outputs.version }}.tgz" \
+          "oci://${{ inputs.repository }}"
