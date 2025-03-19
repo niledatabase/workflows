@@ -33,7 +33,7 @@ on:
       runners:
         required: false
         type: string
-        default: '["ubuntu-arm-2-core","ubuntu-2-core"]'
+        default: '["public-ubuntu-arm64-2-core","public-ubuntu-x64-2-core"]'
       cache-suffix:
         required: false
         type: string
@@ -52,7 +52,7 @@ on:
 
 jobs:
   setup:
-    runs-on: ubuntu-latest
+    runs-on: public-ubuntu-x64-2-core
     outputs:
       uuid: ${{ steps.uuid.outputs.uuid }}
     steps:
@@ -101,7 +101,7 @@ jobs:
           retention-days: 1
 
   merge:
-    runs-on: ubuntu-latest
+    runs-on: public-ubuntu-x64-2-core
     outputs:
       digest: ${{ steps.push-multi-arch.outputs.digest }}
     needs:
