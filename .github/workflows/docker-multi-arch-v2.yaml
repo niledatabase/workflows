@@ -23,6 +23,7 @@ on:
           type=ref,event=pr
           type=semver,pattern={{raw}}
           type=sha
+          type=sha,suffix=-${{ github.ref_name }}-{{commit_date 'X'}},enabled=${{ github.ref_name == 'master' || github.ref_name == 'main' }}
           type=sha,format=long
       build-args:
         required: false
