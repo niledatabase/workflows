@@ -15,6 +15,7 @@ inputs:
       type=semver,pattern={{raw}}
       type=sha
       type=sha,suffix=-${{ github.ref_name }}-{{commit_date 'X'}},enabled=${{ github.ref_name == 'master' || github.ref_name == 'main' }}
+      type=sha,prefix=${{ github.ref_name }}-sha-,suffix=-ts-{{commit_date 'X'}}
       type=sha,format=long
   artifact-digest-pattern:
     description: 'The pattern to match the artifact digest files'
