@@ -121,3 +121,5 @@ runs:
         cache-from: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key }}
         cache-to: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key }},mode=max
         outputs: type=image,"name=${{ inputs.repository }}",push-by-digest=${{ inputs.push-by-digest }},push=${{ inputs.push }}
+        secrets: |
+          "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}"
