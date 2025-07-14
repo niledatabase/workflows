@@ -50,6 +50,9 @@ inputs:
   dockerhub-token:
     description: 'The Docker Hub token to use for authentication'
     required: false
+  build-secrets:
+    description: 'Docker build secrets in format KEY=value (multiline)'
+    required: false
 
 outputs:
   digest:
@@ -121,5 +124,4 @@ runs:
         cache-from: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key }}
         cache-to: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key }},mode=max
         outputs: type=image,"name=${{ inputs.repository }}",push-by-digest=${{ inputs.push-by-digest }},push=${{ inputs.push }}
-        secrets: |
-          "GITHUB_TOKEN=${{ inputs.github-token }}"
+        secrets: ${{ inputs.build-secrets }}

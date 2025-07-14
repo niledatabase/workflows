@@ -46,6 +46,9 @@ on:
       dockerhub-token:
         type: string
         required: false
+    secrets:
+      build-secrets:
+        required: false
 
     outputs:
       digest:
@@ -87,6 +90,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           dockerhub-username: ${{ inputs.dockerhub-username }}
           dockerhub-token: ${{ inputs.dockerhub-token }}
+          build-secrets: ${{ secrets.build-secrets }}
 
       - name: Export digest
         run: |
