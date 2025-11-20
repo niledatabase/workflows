@@ -15,7 +15,7 @@ jobs:
   publish:
     runs-on: public-ubuntu-x64-2-core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: chart version
         id: chart-version
