@@ -34,7 +34,7 @@ runs:
   steps:
     - name: Determine Chart Version
       id: chart-version
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       with:
         script: |
           const tagInput = "${{ inputs.tag }}";
@@ -54,7 +54,7 @@ runs:
           core.setOutput("version", version)
 
     - name: Set up Helm
-      uses: azure/setup-helm@v4
+      uses: azure/setup-helm@v5
       with:
         version: "3.16.2"
 

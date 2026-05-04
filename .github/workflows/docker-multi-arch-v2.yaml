@@ -74,7 +74,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Build image
         id: build
         uses: niledatabase/workflows/.github/actions/docker-multi-arch-build@main
@@ -99,7 +99,7 @@ jobs:
           touch "${{ runner.temp }}/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ needs.setup.outputs.uuid }}-${{ runner.arch }}
           path: ${{ runner.temp }}/digests/*
