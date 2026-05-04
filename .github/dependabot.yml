@@ -1,8 +1,20 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/docker-multi-arch-build"
+      - "/.github/actions/docker-multi-arch-push"
+      - "/.github/actions/helm-release"
     schedule:
       interval: daily
     labels:
       - dependencies
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+      actions-major:
+        update-types:
+          - major
