@@ -15,7 +15,7 @@ jobs:
   publish:
     runs-on: public-ubuntu-x64-2-core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: chart version
         id: chart-version
@@ -26,7 +26,7 @@ jobs:
             echo "version=0.0.0-sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           fi
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: "3.16.2"
 
