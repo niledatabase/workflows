@@ -15,6 +15,10 @@ inputs:
       type=semver,pattern={{raw}}
       type=sha
       type=sha,format=long
+  flavor:
+    description: 'Flavor input forwarded to docker/metadata-action (latest=, prefix=, suffix=)'
+    required: false
+    default: ''
   context:
     description: 'The build context'
     required: false
@@ -69,6 +73,7 @@ runs:
         images: |
           ${{ inputs.repository }}
         tags: ${{ inputs.tags }}
+        flavor: ${{ inputs.flavor }}
 
     - name: Log into ghcr.io
       if: ${{ inputs.github-token != '' }}

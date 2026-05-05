@@ -23,9 +23,13 @@ on:
           type=ref,event=pr
           type=semver,pattern={{raw}}
           type=sha
-          type=sha,suffix=-${{ github.ref_name }}-{{commit_date 'X'}},enabled={{is_default_branch}}
-          type=sha,prefix=${{ github.ref_name }}-sha-,suffix=-ts-{{commit_date 'X'}}
+          type=sha,suffix=-{{branch}}-{{commit_date 'X'}},enable={{is_default_branch}}
+          type=sha,prefix={{branch}}-sha-,suffix=-ts-{{commit_date 'X'}}
           type=sha,format=long
+      flavor:
+        required: false
+        type: string
+        default: ''
       build-args:
         required: false
         type: string
@@ -81,6 +85,7 @@ jobs:
         with:
           repository: ${{ inputs.repository }}
           tags: ${{ inputs.tags }}
+          flavor: ${{ inputs.flavor }}
           context: ${{ inputs.context }}
           file: ${{ inputs.file }}
           build-args: ${{ inputs.build-args }}
@@ -120,5 +125,6 @@ jobs:
         with:
           repository: ${{ inputs.repository }}
           tags: ${{ inputs.tags }}
+          flavor: ${{ inputs.flavor }}
           artifact-digest-pattern: digests-${{ needs.setup.outputs.uuid }}-*
           github-token: ${{ secrets.GITHUB_TOKEN }}
