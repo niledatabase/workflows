@@ -24,7 +24,7 @@ on:
           type=semver,pattern={{raw}}
           type=sha
           type=sha,suffix=-{{branch}}-{{commit_date 'X'}},enable={{is_default_branch}}
-          type=sha,prefix={{branch}}-sha-,suffix=-ts-{{commit_date 'X'}}
+          type=sha,prefix={{branch}}-sha-,suffix=-ts-{{commit_date 'X'}},enable={{is_default_branch}}
           type=sha,format=long
       flavor:
         required: false
