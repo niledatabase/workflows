@@ -128,3 +128,60 @@ jobs:
           flavor: ${{ inputs.flavor }}
           artifact-digest-pattern: digests-${{ needs.setup.outputs.uuid }}-*
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup-cache:
+    needs: [merge]
+    if: ${{ !cancelled() && needs.merge.result == 'success' }}
+    runs-on: public-ubuntu-x64-2-core
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Resolve package name and exclude list
+        id: resolve
+        uses: actions/github-script@v9
+        with:
+          script: |
+            // inputs.repository is e.g. "ghcr.io/niledatabase/operator" or
+            // "ghcr.io/niledatabase/nile-proxy/nile_proxy". Strip "ghcr.io/<owner>/"
+            // and use the remainder verbatim as the package name (GHCR allows "/").
+            const repository = `${{ inputs.repository }}`
+            const m = repository.match(/^ghcr\.io\/[^/]+\/(.+)$/)
+            if (!m) {
+              core.setFailed(`cannot parse package name from repository: ${repository}`)
+              return
+            }
+            const pkg = m[1]
+            core.info(`Package: ${pkg}`)
+
+            const branches = await github.paginate(
+              github.rest.repos.listBranches,
+              { ...context.repo, per_page: 100 },
+              (response) => response.data.map((b) => b.name)
+            )
+            if (branches.length === 0) {
+              core.setFailed('listBranches returned no branches; aborting to avoid mass deletion')
+              return
+            }
+
+            const sanitize = (s) =>
+              s.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase().slice(0, 64)
+            const archs = ['x64', 'arm64']
+            // Wildcard prefix so suffixed variants (e.g. cache-x64-pg15-<branch>) are also preserved.
+            const exclude = branches.flatMap((b) => {
+              const s = sanitize(b)
+              return archs.map((a) => `cache-${a}-*${s}`)
+            })
+
+            core.setOutput('package', pkg)
+            core.setOutput('exclude_tags', exclude.join(','))
+
+      - name: Prune stale cache tags
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package: ${{ steps.resolve.outputs.package }}
+          delete-tags: cache-x64-*,cache-arm64-*
+          exclude-tags: ${{ steps.resolve.outputs.exclude_tags }}
+          older-than: 1 day
+          delete-partial-images: true

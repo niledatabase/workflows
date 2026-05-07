@@ -98,21 +98,30 @@ runs:
       uses: actions/github-script@v9
       with:
         script: |
-          const suffix = "${{ inputs.cache-suffix }}"   // e.g., "latest" or "" if empty
-          const runnerArch = "${{ runner.arch }}" // e.g.,  X86, X64, ARM, or ARM64
+          const suffix = "${{ inputs.cache-suffix }}"
+          const runnerArch = "${{ runner.arch }}".toLowerCase() // x86 / x64 / arm / arm64
 
-          // Conditionally include the suffix
-          let cacheKey
-          if (suffix && suffix.trim().length > 0) {
-            cacheKey = `cache-${runnerArch}-${suffix}`
-          } else {
-            cacheKey = `cache-${runnerArch}`
-          }
+          const sanitize = (s) =>
+            s.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase().slice(0, 64)
 
-          core.info(`Using cache key: ${cacheKey}`)
+          // For PRs, github.ref_name is "<num>/merge"; head_ref is the source branch.
+          // For pushes, head_ref is empty.
+          const rawBranch = "${{ github.head_ref || github.ref_name }}"
+          const branch = sanitize(rawBranch)
+          const defaultBranch = sanitize(context.payload.repository.default_branch)
 
-          // Set this as a step output
-          core.setOutput("cache_key", cacheKey)
+          const base = suffix && suffix.trim().length > 0
+            ? `cache-${runnerArch}-${suffix}`
+            : `cache-${runnerArch}`
+
+          const cacheKeyBranch = `${base}-${branch}`
+          const cacheKeyDefault = `${base}-${defaultBranch}`
+
+          core.info(`Cache key (write):    ${cacheKeyBranch}`)
+          core.info(`Cache key (fallback): ${cacheKeyDefault}`)
+
+          core.setOutput("cache_key_branch", cacheKeyBranch)
+          core.setOutput("cache_key_default", cacheKeyDefault)
 
     - name: Build and push by digest
       id: build
@@ -126,7 +135,9 @@ runs:
         build-args: ${{ inputs.build-args }}
         target: ${{ inputs.target }}
         provenance: false
-        cache-from: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key }}
-        cache-to: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key }},mode=max
+        cache-from: |
+          type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key_branch }}
+          type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key_default }}
+        cache-to: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key_branch }},mode=max,ignore-error=true
         outputs: type=image,"name=${{ inputs.repository }}",push-by-digest=${{ inputs.push-by-digest }},push=${{ inputs.push }}
         secrets: ${{ inputs.build-secrets }}
