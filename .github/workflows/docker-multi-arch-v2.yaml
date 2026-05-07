@@ -184,4 +184,3 @@ jobs:
           delete-tags: cache-x64-*,cache-arm64-*
           exclude-tags: ${{ steps.resolve.outputs.exclude_tags }}
           older-than: 1 day
-          delete-partial-images: true
