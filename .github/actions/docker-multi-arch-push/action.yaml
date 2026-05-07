@@ -15,7 +15,7 @@ inputs:
       type=semver,pattern={{raw}}
       type=sha
       type=sha,suffix=-{{branch}}-{{commit_date 'X'}},enable={{is_default_branch}}
-      type=sha,prefix={{branch}}-sha-,suffix=-ts-{{commit_date 'X'}}
+      type=sha,prefix={{branch}}-sha-,suffix=-ts-{{commit_date 'X'}},enable={{is_default_branch}}
       type=sha,format=long
   flavor:
     description: 'Flavor input forwarded to docker/metadata-action (latest=, prefix=, suffix=)'
