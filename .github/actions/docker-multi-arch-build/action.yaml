@@ -128,6 +128,8 @@ runs:
     - name: Build and push by digest
       id: build
       uses: docker/build-push-action@v7
+      env:
+        DOCKER_BUILD_RECORD_UPLOAD: false
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.file }}
