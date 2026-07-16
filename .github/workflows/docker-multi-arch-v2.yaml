@@ -78,7 +78,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Build image
         id: build
         uses: niledatabase/workflows/.github/actions/docker-multi-arch-build@main
