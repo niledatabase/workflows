@@ -110,7 +110,9 @@ runs:
       uses: actions/cache@v5
       with:
         path: ${{ runner.temp }}/buildkit-cache-mounts
-        key: buildkit-cache-mounts-${{ runner.arch }}-${{ inputs.cache-suffix }}-${{ hashFiles(inputs.file) }}
+        key: buildkit-cache-mounts-${{ runner.arch }}-${{ inputs.repository }}-${{ inputs.cache-suffix }}-${{ github.sha }}
+        restore-keys: |
+          buildkit-cache-mounts-${{ runner.arch }}-${{ inputs.repository }}-${{ inputs.cache-suffix }}-
 
     - name: Inject Docker cache mounts
       uses: reproducible-containers/buildkit-cache-dance@v3
