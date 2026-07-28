@@ -122,26 +122,21 @@ runs:
         dockerfile: ${{ inputs.file }}
         skip-extraction: ${{ steps.cache-mounts.outputs.cache-hit }}
 
-    - name: Generate cache key
-      id: generate_cache_key
+    - name: Generate registry cache configuration
+      id: registry_cache
       uses: actions/github-script@v9
+      env:
+        CACHE_REPOSITORY: ${{ inputs.repository }}
+        CACHE_SUFFIX: ${{ inputs.cache-suffix }}
       with:
         script: |
-          const suffix = "${{ inputs.cache-suffix }}"   // e.g., "latest" or "" if empty
-          const runnerArch = "${{ runner.arch }}" // e.g.,  X86, X64, ARM, or ARM64
+          const suffix = process.env.CACHE_SUFFIX.trim()
+          const key = ['cache', process.env.RUNNER_ARCH, suffix].filter(Boolean).join('-')
+          const cache = `type=registry,ref=${process.env.CACHE_REPOSITORY}:${key}`
 
-          // Conditionally include the suffix
-          let cacheKey
-          if (suffix && suffix.trim().length > 0) {
-            cacheKey = `cache-${runnerArch}-${suffix}`
-          } else {
-            cacheKey = `cache-${runnerArch}`
-          }
-
-          core.info(`Using cache key: ${cacheKey}`)
-
-          // Set this as a step output
-          core.setOutput("cache_key", cacheKey)
+          core.info(`Using registry cache: ${cache}`)
+          core.setOutput('from', cache)
+          core.setOutput('to', context.ref === `refs/heads/${context.payload.repository.default_branch}` ? `${cache},mode=max` : '')
 
     - name: Build and push by digest
       id: build
@@ -157,7 +152,7 @@ runs:
         build-args: ${{ inputs.build-args }}
         target: ${{ inputs.target }}
         provenance: false
-        cache-from: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key }}
-        cache-to: type=registry,ref=${{ inputs.repository }}:${{ steps.generate_cache_key.outputs.cache_key }},mode=max
+        cache-from: ${{ steps.registry_cache.outputs.from }}
+        cache-to: ${{ steps.registry_cache.outputs.to }}
         outputs: type=image,"name=${{ inputs.repository }}",push-by-digest=${{ inputs.push-by-digest }},push=${{ inputs.push }}
         secrets: ${{ inputs.build-secrets }}
