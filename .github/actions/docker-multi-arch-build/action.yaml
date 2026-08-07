@@ -114,13 +114,36 @@ runs:
         restore-keys: |
           buildkit-cache-mounts-${{ runner.arch }}-${{ inputs.repository }}-${{ inputs.cache-suffix }}-
 
+    - name: Load Docker cache map
+      id: load-cache-map
+      uses: actions/github-script@v9
+      env:
+        CACHE_DIR: ${{ runner.temp }}/buildkit-cache-mounts
+      with:
+        script: |
+          const fs = require('fs')
+          const path = require('path')
+          const mapPath = path.join(process.env.CACHE_DIR, 'cache-map.json')
+
+          if (!fs.existsSync(mapPath)) {
+            core.info(`No Docker cache map found at ${mapPath}; skipping cache injection`)
+            core.setOutput('has-cache-mounts', 'false')
+            core.setOutput('cache-map', '{}')
+            return
+          }
+
+          const cacheMap = fs.readFileSync(mapPath, 'utf8').trim()
+            .replaceAll('$CACHE_DIR', process.env.CACHE_DIR)
+          core.setOutput('has-cache-mounts', cacheMap !== '{}' ? 'true' : 'false')
+          core.setOutput('cache-map', cacheMap)
+
     - name: Inject Docker cache mounts
+      if: ${{ steps.load-cache-map.outputs.has-cache-mounts == 'true' }}
       uses: reproducible-containers/buildkit-cache-dance@v3
       with:
         builder: ${{ steps.setup-buildx.outputs.name }}
-        cache-dir: ${{ runner.temp }}/buildkit-cache-mounts
-        dockerfile: ${{ inputs.file }}
-        skip-extraction: ${{ steps.cache-mounts.outputs.cache-hit }}
+        cache-map: ${{ steps.load-cache-map.outputs.cache-map }}
+        skip-extraction: true
 
     - name: Generate registry cache configuration
       id: registry_cache
@@ -143,6 +166,7 @@ runs:
       uses: docker/build-push-action@v7
       env:
         DOCKER_BUILD_RECORD_UPLOAD: false
+        BUILDX_METADATA_PROVENANCE: max
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.file }}
@@ -156,3 +180,57 @@ runs:
         cache-to: ${{ steps.registry_cache.outputs.to }}
         outputs: type=image,"name=${{ inputs.repository }}",push-by-digest=${{ inputs.push-by-digest }},push=${{ inputs.push }}
         secrets: ${{ inputs.build-secrets }}
+
+    - name: Save Docker cache map
+      id: save-cache-map
+      uses: actions/github-script@v9
+      env:
+        BUILD_METADATA: ${{ steps.build.outputs.metadata }}
+        CACHE_DIR: ${{ runner.temp }}/buildkit-cache-mounts
+      with:
+        script: |
+          const crypto = require('crypto')
+          const fs = require('fs')
+          const path = require('path')
+          const metadata = JSON.parse(process.env.BUILD_METADATA)
+          const definitions = metadata['buildx.build.provenance']?.buildConfig?.llbDefinition
+
+          if (!Array.isArray(definitions)) {
+            throw new Error('Build metadata does not contain the processed build definition')
+          }
+
+          const ids = new Set()
+          for (const definition of definitions) {
+            const mounts = definition.op?.Op?.exec?.mounts ?? []
+            for (const mount of mounts) {
+              if (mount.cacheOpt?.ID) {
+                ids.add(mount.cacheOpt.ID.replace(/^\/+/, ''))
+              }
+            }
+          }
+
+          const sortedIds = [...ids].sort()
+          const cacheMap = {}
+          for (const id of sortedIds) {
+            const directory = crypto.createHash('sha256').update(id).digest('hex')
+            cacheMap[`$CACHE_DIR/mounts/${directory}`] = {
+              id,
+              target: '/var/cache-target'
+            }
+          }
+
+          fs.rmSync(process.env.CACHE_DIR, {recursive: true, force: true})
+          fs.mkdirSync(process.env.CACHE_DIR, {recursive: true})
+          fs.writeFileSync(
+            path.join(process.env.CACHE_DIR, 'cache-map.json'),
+            `${JSON.stringify(cacheMap, null, 2)}\n`
+          )
+          core.setOutput('has-cache-mounts', sortedIds.length !== 0 ? 'true' : 'false')
+          core.setOutput('cache-map', JSON.stringify(cacheMap).replaceAll('$CACHE_DIR', process.env.CACHE_DIR))
+
+    - name: Register Docker cache mount extraction
+      if: ${{ steps.save-cache-map.outputs.has-cache-mounts == 'true' }}
+      uses: reproducible-containers/buildkit-cache-dance@v3
+      with:
+        builder: ${{ steps.setup-buildx.outputs.name }}
+        cache-map: ${{ steps.save-cache-map.outputs.cache-map }}
