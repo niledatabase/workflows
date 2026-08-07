@@ -184,22 +184,32 @@ runs:
         outputs: type=image,"name=${{ inputs.repository }}",push-by-digest=${{ inputs.push-by-digest }},push=${{ inputs.push }}
         secrets: ${{ inputs.build-secrets }}
 
+    - name: Export processed build provenance
+      shell: bash
+      run: |
+        docker buildx history inspect attachment \
+          --builder '${{ steps.setup-buildx.outputs.name }}' \
+          --type https://slsa.dev/provenance/v1 \
+          > '${{ runner.temp }}/build-provenance.json'
+
     - name: Save Docker cache map
       id: save-cache-map
       uses: actions/github-script@v9
       env:
-        BUILD_METADATA: ${{ steps.build.outputs.metadata }}
         CACHE_DIR: ${{ runner.temp }}/buildkit-cache-mounts
       with:
         script: |
           const crypto = require('crypto')
           const fs = require('fs')
           const path = require('path')
-          const metadata = JSON.parse(process.env.BUILD_METADATA)
-          const definitions = metadata['buildx.build.provenance']?.buildConfig?.llbDefinition
+          const provenance = JSON.parse(fs.readFileSync(
+            path.join(process.env.RUNNER_TEMP, 'build-provenance.json'),
+            'utf8'
+          ))
+          const definitions = provenance.internalParameters?.buildConfig?.llbDefinition
 
           if (!Array.isArray(definitions)) {
-            throw new Error('Build metadata does not contain the processed build definition')
+            throw new Error('Build provenance does not contain the processed build definition')
           }
 
           const ids = new Set()
