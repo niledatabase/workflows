@@ -81,7 +81,7 @@ jobs:
         uses: actions/checkout@v7
       - name: Build image
         id: build
-        uses: niledatabase/workflows/.github/actions/docker-multi-arch-build@main
+        uses: $/.github/actions/docker-multi-arch-build
         with:
           repository: ${{ inputs.repository }}
           tags: ${{ inputs.tags }}
@@ -121,7 +121,7 @@ jobs:
     steps:
       - name: Push multi-arch
         id: push-multi-arch
-        uses: niledatabase/workflows/.github/actions/docker-multi-arch-push@main
+        uses: $/.github/actions/docker-multi-arch-push
         with:
           repository: ${{ inputs.repository }}
           tags: ${{ inputs.tags }}
