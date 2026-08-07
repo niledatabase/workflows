@@ -206,7 +206,7 @@ runs:
             path.join(process.env.RUNNER_TEMP, 'build-provenance.json'),
             'utf8'
           ))
-          const definitions = provenance.internalParameters?.buildConfig?.llbDefinition
+          const definitions = provenance.buildDefinition?.internalParameters?.buildConfig?.llbDefinition
 
           if (!Array.isArray(definitions)) {
             throw new Error('Build provenance does not contain the processed build definition')
