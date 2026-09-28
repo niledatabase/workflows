@@ -6,6 +6,8 @@ updates:
       - "/.github/actions/docker-multi-arch-build"
       - "/.github/actions/docker-multi-arch-push"
       - "/.github/actions/helm-release"
+      - "/.github/actions/buildkit-cache-mounts/restore"
+      - "/.github/actions/buildkit-cache-mounts/save"
     schedule:
       interval: daily
     labels:
@@ -18,3 +20,12 @@ updates:
       actions-major:
         update-types:
           - major
+
+  - package-ecosystem: gomod
+    directory: "/.github/actions/buildkit-cache-mounts"
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 3
+    labels:
+      - dependencies

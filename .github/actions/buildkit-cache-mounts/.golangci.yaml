@@ -1,0 +1,87 @@
+version: "2"
+run:
+  tests: true
+  build-tags:
+    - integration
+linters:
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - copyloopvar
+    - decorder
+    - durationcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - goconst
+    - gocritic
+    - grouper
+    - iface
+    - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - reassign
+    - revive
+    - sloglint
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - whitespace
+  settings:
+    errcheck:
+      check-blank: true
+      exclude-functions:
+        - (*github.com/spf13/cobra.Command).MarkFlagRequired
+    gocritic:
+      enabled-checks:
+        - sloppyReassign
+    goconst:
+      exclude-types:
+        - Call
+        - CompositeLit
+    sloglint:
+      args-on-sep-lines: true
+      attr-only: true
+      no-global: all
+      static-msg: true
+      key-naming-case: snake
+      context: all
+    revive:
+      enable-default-rules: true
+    staticcheck:
+      checks:
+        - all
+  exclusions:
+    generated: strict
+    presets:
+      - comments
+      - std-error-handling
+issues:
+  uniq-by-line: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gci
+    - gofumpt
+    - golines
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+    golines:
+      max-len: 200
+      reformat-tags: false
+  exclusions:
+    generated: strict
