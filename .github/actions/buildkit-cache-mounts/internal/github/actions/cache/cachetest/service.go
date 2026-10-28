@@ -3,6 +3,7 @@
 package cachetest
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/azure/azurite"
 	tcnetwork "github.com/testcontainers/testcontainers-go/network"
@@ -49,7 +51,7 @@ type Service struct {
 }
 
 // New starts Azurite and a Service, and stops them when the test ends.
-// If networkName is not empty, Azurite joins the Docker network networkName, and the signed URLs use the address of Azurite in that network.
+// If networkName is not empty, Azurite joins the Docker network networkName, the signed URLs use the address of Azurite in that network, and the Service listens like NewServer.
 func New(t *testing.T, networkName string) *Service {
 	t.Helper()
 	ctx := t.Context()
@@ -94,9 +96,48 @@ func New(t *testing.T, networkName string) *Service {
 	if _, err := service.containerClient.Create(ctx, nil); err != nil {
 		t.Fatalf("create Azurite Blob container: %v", err)
 	}
-	service.server = httptest.NewServer(http.HandlerFunc(service.serveHTTP))
-	t.Cleanup(service.server.Close)
+	service.server = NewServer(t, networkName, http.HandlerFunc(service.serveHTTP))
 	return service
+}
+
+// NewServer starts an HTTP server with handler, and closes it when the test ends.
+// If networkName is not empty, the server listens on the gateway address of the Docker network networkName, so that containers in the network can connect to it.
+func NewServer(t *testing.T, networkName string, handler http.Handler) *httptest.Server {
+	t.Helper()
+	server := httptest.NewUnstartedServer(handler)
+	if networkName != "" {
+		gateway, err := networkGateway(t.Context(), networkName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", net.JoinHostPort(gateway, "0"))
+		if err != nil {
+			t.Fatalf("listen on Docker network gateway: %v", err)
+		}
+		server.Listener.Close()
+		server.Listener = listener
+	}
+	server.Start()
+	t.Cleanup(server.Close)
+	return server
+}
+
+func networkGateway(ctx context.Context, networkName string) (string, error) {
+	docker, err := testcontainers.NewDockerClientWithOpts(ctx)
+	if err != nil {
+		return "", fmt.Errorf("create Docker client: %w", err)
+	}
+	defer docker.Close()
+	inspection, err := docker.NetworkInspect(ctx, networkName, dockerclient.NetworkInspectOptions{})
+	if err != nil {
+		return "", fmt.Errorf("inspect Docker network: %w", err)
+	}
+	for _, config := range inspection.Network.IPAM.Config {
+		if config.Gateway.Is4() {
+			return config.Gateway.String(), nil
+		}
+	}
+	return "", fmt.Errorf("network %s has no IPv4 gateway", networkName)
 }
 
 // ResultsURL returns the Results service URL of s.

@@ -17,24 +17,11 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    outputs:
-      binary-commit: ${{ steps.binary-commit.outputs.binary-commit }}
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Check binary-commit defaults
-        id: binary-commit
-        working-directory: .github/actions/buildkit-cache-mounts
-        run: |
-          restore="$(yq '.inputs.binary-commit.default' restore/action.yaml)"
-          save="$(yq '.inputs.binary-commit.default' save/action.yaml)"
-          if [[ "$restore" != "$save" ]]; then
-            echo "::error::The binary-commit defaults differ: restore has '$restore', save has '$save'."
-            exit 1
-          fi
-          echo "binary-commit=$restore" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v6
         with:
           go-version-file: .github/actions/buildkit-cache-mounts/go.mod
@@ -55,11 +42,14 @@ jobs:
   release:
     if: github.event_name == 'push'
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
-      contents: write
+      contents: read
+      packages: write
       id-token: write
       attestations: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/buildkit-cache-mounts
     # Any step in this job can sign provenance, so the actions are pinned by commit SHA.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,40 +60,31 @@ jobs:
           go-version-file: .github/actions/buildkit-cache-mounts/go.mod
           # The verify job runs test code before it saves the Go module and build caches, and Go does not verify cached files.
           cache: false
-      - name: Build
+      - name: Build binaries
         working-directory: .github/actions/buildkit-cache-mounts
         run: make build
-      - name: Compare with the pinned release
-        id: compare
-        working-directory: .github/actions/buildkit-cache-mounts/bin
-        env:
-          BINARY_COMMIT: ${{ needs.verify.outputs.binary-commit }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          changed=false
-          pinned_dir="$RUNNER_TEMP/pinned"
-          if [[ -z "$BINARY_COMMIT" ]] ||
-            ! gh release download "buildkit-cache-mounts-$BINARY_COMMIT" \
-              --repo "$GITHUB_REPOSITORY" \
-              --pattern 'buildkit-cache-mounts-linux-*' \
-              --dir "$pinned_dir" ||
-            ! diff --brief --recursive . "$pinned_dir"; then
-            changed=true
-          fi
-          echo "changed=$changed" >> "$GITHUB_OUTPUT"
-      - name: Attest binaries
-        if: steps.compare.outputs.changed == 'true'
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: .github/actions/buildkit-cache-mounts/bin/*
-      - name: Publish release
-        if: steps.compare.outputs.changed == 'true'
+      - name: Build and push image
+        id: image
         working-directory: .github/actions/buildkit-cache-mounts
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # With rewrite-timestamp, the image digest does not depend on the build time.
+          SOURCE_DATE_EPOCH: 0
         run: |
-          gh release create "buildkit-cache-mounts-$GITHUB_SHA" bin/* \
-            --latest=false \
-            --target "$GITHUB_SHA" \
-            --title "BuildKit cache mounts ${GITHUB_SHA::12}" \
-            --notes "Built from $GITHUB_SHA."
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --use --driver docker-container \
+            --driver-opt image=docker.io/moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --provenance=false \
+            --file Dockerfile \
+            --metadata-file "$RUNNER_TEMP/image-metadata.json" \
+            --output "type=image,name=$IMAGE:$GITHUB_SHA,push=true,rewrite-timestamp=true" \
+            bin
+          echo "digest=$(jq --raw-output '."containerimage.digest"' "$RUNNER_TEMP/image-metadata.json")" >> "$GITHUB_OUTPUT"
+      - name: Attest image
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true

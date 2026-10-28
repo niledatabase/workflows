@@ -24,86 +24,71 @@ func TestUploadRoundTrip(t *testing.T) {
 	if _, err := rand.Read(value); err != nil {
 		t.Fatal(err)
 	}
-	for _, empty := range []bool{true, false} {
-		t.Run(fmt.Sprintf("empty=%t", empty), func(t *testing.T) {
-			source := t.TempDir()
-			if !empty {
-				if err := os.WriteFile(filepath.Join(source, "value"), value, 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			var mu sync.Mutex
-			blocks := map[string][]byte{}
-			var compressed bytes.Buffer
-			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-				if empty {
-					t.Error("empty directory sent an upload request")
-				}
-				mu.Lock()
-				defer mu.Unlock()
-				switch request.URL.Query().Get("comp") {
-				case "":
-					if _, err := io.Copy(&compressed, request.Body); err != nil {
-						t.Error(err)
-						http.Error(response, "read archive", http.StatusBadRequest)
-						return
-					}
-				case "block":
-					data, err := io.ReadAll(request.Body)
-					if err != nil {
-						t.Error(err)
-						http.Error(response, "read block", http.StatusBadRequest)
-						return
-					}
-					blocks[request.URL.Query().Get("blockid")] = data
-				case "blocklist":
-					var list struct {
-						Latest []string `xml:"Latest"`
-					}
-					if err := xml.NewDecoder(request.Body).Decode(&list); err != nil {
-						t.Error(err)
-						http.Error(response, "read block list", http.StatusBadRequest)
-						return
-					}
-					for _, id := range list.Latest {
-						compressed.Write(blocks[id])
-					}
-				default:
-					t.Errorf("unexpected upload request: %s", request.URL.Path)
-					http.Error(response, "unexpected request", http.StatusBadRequest)
-					return
-				}
-				response.WriteHeader(http.StatusCreated)
-			}))
-			t.Cleanup(server.Close)
-
-			size, err := Upload(t.Context(), source, server.URL+"/cache")
-			if err != nil {
-				t.Fatal(err)
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if empty {
-				if size != 0 || compressed.Len() != 0 {
-					t.Fatalf("empty upload returned size %d and sent %d bytes", size, compressed.Len())
-				}
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "value"), value, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	blocks := map[string][]byte{}
+	var compressed bytes.Buffer
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch request.URL.Query().Get("comp") {
+		case "":
+			if _, err := io.Copy(&compressed, request.Body); err != nil {
+				t.Error(err)
+				http.Error(response, "read archive", http.StatusBadRequest)
 				return
 			}
-			if size != int64(compressed.Len()) || size == 0 {
-				t.Fatalf("uploaded size is %d, received %d bytes", size, compressed.Len())
-			}
-			destination := t.TempDir()
-			if err := ExtractDirectory(t.Context(), &compressed, destination); err != nil {
-				t.Fatal(err)
-			}
-			got, err := os.ReadFile(filepath.Join(destination, "value"))
+		case "block":
+			data, err := io.ReadAll(request.Body)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(response, "read block", http.StatusBadRequest)
+				return
 			}
-			if !bytes.Equal(got, value) {
-				t.Fatal("restored contents differ from source")
+			blocks[request.URL.Query().Get("blockid")] = data
+		case "blocklist":
+			var list struct {
+				Latest []string `xml:"Latest"`
 			}
-		})
+			if err := xml.NewDecoder(request.Body).Decode(&list); err != nil {
+				t.Error(err)
+				http.Error(response, "read block list", http.StatusBadRequest)
+				return
+			}
+			for _, id := range list.Latest {
+				compressed.Write(blocks[id])
+			}
+		default:
+			t.Errorf("unexpected upload request: %s", request.URL.Path)
+			http.Error(response, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		response.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(server.Close)
+
+	size, err := Upload(t.Context(), source, server.URL+"/cache")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if size != int64(compressed.Len()) || size == 0 {
+		t.Fatalf("uploaded size is %d, received %d bytes", size, compressed.Len())
+	}
+	destination := t.TempDir()
+	if err := ExtractDirectory(t.Context(), &compressed, destination); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(destination, "value"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, value) {
+		t.Fatal("restored contents differ from source")
 	}
 }
 

@@ -1,28 +1,27 @@
 # BuildKit cache mounts
 
-The `buildkit-cache-mounts` actions keep the contents of Dockerfile cache mounts (`RUN --mount=type=cache`) in the GitHub Actions cache. Run `restore` before the image build and `save` after it, with the same Buildx builder. Use the same `file`, `target`, `platforms`, and `build-args` as the build.
+`buildkit-cache-mounts` is a BuildKit frontend that keeps the contents of Dockerfile cache mounts (`RUN --mount=type=cache`) in the GitHub Actions cache. It builds the Dockerfile with the Dockerfile frontend of the builder. Before the build, it restores each cache mount from the cache.
 
 ```yaml
-- id: buildx
-  uses: docker/setup-buildx-action@v4
-- uses: niledatabase/workflows/.github/actions/buildkit-cache-mounts/restore@main
-  with:
-    builder: ${{ steps.buildx.outputs.name }}
-    key: ${{ runner.arch }}-${{ github.sha }}
-    restore-keys: |
-      ${{ runner.arch }}-
+- uses: docker/setup-buildx-action@v4
 - uses: docker/build-push-action@v7
   with:
-    builder: ${{ steps.buildx.outputs.name }}
-- uses: niledatabase/workflows/.github/actions/buildkit-cache-mounts/save@main
-  with:
-    builder: ${{ steps.buildx.outputs.name }}
-    key: ${{ runner.arch }}-${{ github.sha }}
+    build-args: |
+      BUILDKIT_SYNTAX=ghcr.io/niledatabase/buildkit-cache-mounts@sha256:<digest>
+      BUILDKIT_CACHE_MOUNTS_KEY=${{ runner.arch }}-${{ github.sha }}
+      BUILDKIT_CACHE_MOUNTS_RESTORE_KEYS=${{ runner.arch }}-
+    secret-envs: |
+      ACTIONS_RUNTIME_TOKEN=ACTIONS_RUNTIME_TOKEN
+      ACTIONS_RESULTS_URL=ACTIONS_RESULTS_URL
 ```
 
+- `BUILDKIT_SYNTAX` selects the frontend. The syntax directive of the Dockerfile continues to select the version of the Dockerfile frontend.
+- `BUILDKIT_CACHE_MOUNTS_KEY` is the cache key. Without it, the frontend only builds the Dockerfile. `BUILDKIT_CACHE_MOUNTS_RESTORE_KEYS` contains comma-separated key prefixes, in order of preference, for the restore when no exact key matches. The Dockerfile does not get these build arguments.
+- `secret-envs` gives the runtime token and the Results service URL to the build. The runner sets them only for JavaScript and container actions, such as `docker/build-push-action` (actions/runner#3046).
 - Each cache mount gets its own cache entry. Put `runner.arch` in the key, so that runners with different architectures do not share cache entries.
-- The actions skip mounts with `sharing=private` and mounts whose `from` source reads local files, such as the build context. `save` skips empty mounts.
-- A cache failure does not fail the job: the failed step shows an error, and the job continues. If the binary download or its attestation verification fails, the actions skip the cache.
+- The frontend skips mounts with `sharing=private` and mounts whose `from` source reads local files, such as the build context. The save skips empty mounts.
+- The restore skips a mount that has files, for example from an earlier build on the same builder. BuildKit creates a mount with `from`, `uid`, `gid`, or `mode` from a source directory, so the restore always replaces the files of such a mount.
+- A cache failure does not fail the build: the failed transfer step shows the error, and the build shows a warning.
 
 ## Development
 
@@ -35,8 +34,4 @@ Run these targets in this directory:
 
 ## Release
 
-The actions download the binary from the release for the commit in the `binary-commit` input. `gh attestation verify` makes sure that the release workflow built the binary on `main` from that commit.
-
-On each push to `main` that changes this directory, the release workflow builds the binaries. If they differ from the binaries of the `binary-commit` default, the workflow attests them and publishes the release `buildkit-cache-mounts-<commit>`.
-
-To use a new release, set the `binary-commit` default in `restore/action.yaml` and `save/action.yaml` to the commit of the release. The `verify` job fails if the two defaults differ.
+On each push to `main` that changes this directory, the release workflow builds the image `ghcr.io/niledatabase/buildkit-cache-mounts:<commit>` for `linux/amd64` and `linux/arm64`, pushes it, and attests it. The image build is reproducible: the digest changes only when the binaries, the `Dockerfile`, or the BuildKit version of the release workflow change. Reference the image by digest.

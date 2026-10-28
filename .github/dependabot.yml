@@ -6,8 +6,6 @@ updates:
       - "/.github/actions/docker-multi-arch-build"
       - "/.github/actions/docker-multi-arch-push"
       - "/.github/actions/helm-release"
-      - "/.github/actions/buildkit-cache-mounts/restore"
-      - "/.github/actions/buildkit-cache-mounts/save"
     schedule:
       interval: daily
     labels:

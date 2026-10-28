@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
@@ -25,22 +24,11 @@ const (
 	downloadConcurrency = 8
 )
 
-// UploadResult is the JSON output of the archive upload command.
-type UploadResult struct {
-	// CompressedSize is the size of the uploaded archive in bytes, or 0 if the directory is empty and the command uploaded nothing.
-	CompressedSize int64 `json:"compressed_size"`
-}
-
 // Upload uploads an archive of directory to the signed Azure Blob URL uploadURL and returns the size of the archive in bytes.
-// If directory is empty, it uploads nothing and returns 0.
 // It fails if the transfer takes longer than 30 minutes.
 // Errors do not contain uploadURL.
 func Upload(ctx context.Context, directory, uploadURL string) (int64, error) {
 	if err := ctx.Err(); err != nil {
-		return 0, err
-	}
-	empty, err := isEmptyDirectory(directory)
-	if err != nil || empty {
 		return 0, err
 	}
 	blobClient, err := blockblob.NewClientWithNoCredential(uploadURL, nil)
@@ -176,21 +164,6 @@ func transferError(ctx context.Context, operation string, err error) error {
 		return fmt.Errorf("%s: %w", operation, urlErr.Err)
 	}
 	return errors.New(operation)
-}
-
-func isEmptyDirectory(directory string) (bool, error) {
-	file, err := os.Open(directory)
-	if err != nil {
-		return false, fmt.Errorf("open archive source: %w", err)
-	}
-	defer file.Close()
-	if _, err := file.Readdirnames(1); err != nil {
-		if errors.Is(err, io.EOF) {
-			return true, nil
-		}
-		return false, fmt.Errorf("read archive source: %w", err)
-	}
-	return false, nil
 }
 
 type countingWriter struct {

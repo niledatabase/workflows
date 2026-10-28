@@ -1,4 +1,4 @@
-# The release workflow publishes a release only if the binaries differ from the pinned release, so the build must be reproducible.
+# The release image must keep its digest when the code does not change, so the build must be reproducible.
 BUILD_FLAGS := -trimpath -buildvcs=false
 LDFLAGS := -s -w -buildid=
 GOLANGCI_LINT_VERSION := v2.15.0

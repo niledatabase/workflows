@@ -1,124 +1,181 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	cachearchive "github.com/niledatabase/workflows/.github/actions/buildkit-cache-mounts/internal/archive"
+	"github.com/niledatabase/workflows/.github/actions/buildkit-cache-mounts/internal/frontend"
+	actionscache "github.com/niledatabase/workflows/.github/actions/buildkit-cache-mounts/internal/github/actions/cache"
 )
 
-const maximumSignedURLSize = 64 << 10
+// executablePath is the path to which the Dockerfile of the frontend image copies the executable.
+const executablePath = "/buildkit-cache-mounts"
 
-type archiveCommandOptions struct {
-	directory string
-	urlFile   string
+// archiveArgs returns the command-line arguments that run transfer with the archive command of the frontend image.
+func archiveArgs(transfer frontend.Transfer) []string {
+	args := []string{
+		executablePath, "archive", string(transfer.Operation),
+		"--directory", transfer.Directory,
+		"--key", transfer.Key,
+		"--runtime-token-file", transfer.RuntimeTokenFile,
+		"--results-url-file", transfer.ResultsURLFile,
+	}
+	for _, restoreKey := range transfer.RestoreKeys {
+		args = append(args, "--restore-key", restoreKey)
+	}
+	if transfer.SkipNonEmpty {
+		args = append(args, "--skip-non-empty")
+	}
+	return args
 }
 
-func newArchiveCommand() *cobra.Command {
+// newArchiveCommand returns the command that parses the arguments of archiveArgs and runs the transfer with run.
+func newArchiveCommand(run func(context.Context, frontend.Transfer) error) *cobra.Command {
 	command := &cobra.Command{
 		Use:    "archive",
-		Short:  "Transfer cache mount archives",
+		Short:  "Transfer a cache mount between a directory and the GitHub Actions cache",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 	}
 	command.AddCommand(
-		newArchiveSubcommand("upload", "Archive and upload a directory", uploadArchive),
-		newArchiveSubcommand("download", "Download and extract an archive into a directory", downloadArchive),
+		newArchiveSubcommand(frontend.Restore, "Restore a directory from the GitHub Actions cache", run),
+		newArchiveSubcommand(frontend.Save, "Save a directory to the GitHub Actions cache", run),
 	)
 	return command
 }
 
-// newArchiveSubcommand returns an archive command that runs run.
-// The command logs JSON records on standard error, because runCacheMountCommand logs these records again with the context of the cache mount.
-func newArchiveSubcommand(use, short string, run func(ctx context.Context, options *archiveCommandOptions, output io.Writer) error) *cobra.Command {
-	options := &archiveCommandOptions{}
+func newArchiveSubcommand(operation frontend.Operation, short string, run func(context.Context, frontend.Transfer) error) *cobra.Command {
+	transfer := frontend.Transfer{Operation: operation}
 	command := &cobra.Command{
-		Use:   use,
+		Use:   string(operation),
 		Short: short,
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			ctx := command.Context()
-			log := slog.New(slog.NewJSONHandler(command.ErrOrStderr(), nil))
-			err := options.validate()
-			if err == nil {
-				err = run(ctx, options, command.OutOrStdout())
-			}
-			if err != nil {
-				log.ErrorContext(ctx, "archive command failed", slog.Any("error", err))
-				return ErrReported
-			}
-			return nil
+			return run(command.Context(), transfer)
 		},
 	}
-	options.addFlags(command.Flags())
+	flags := command.Flags()
+	flags.StringVar(&transfer.Directory, "directory", "", "Directory of the cache mount")
+	flags.StringVar(&transfer.Key, "key", "", "Cache key of the cache mount")
+	flags.StringVar(&transfer.RuntimeTokenFile, "runtime-token-file", "", "File containing the GitHub Actions runtime token")
+	flags.StringVar(&transfer.ResultsURLFile, "results-url-file", "", "File containing the GitHub Actions Results service URL")
+	if operation == frontend.Restore {
+		flags.StringArrayVar(&transfer.RestoreKeys, "restore-key", nil, "Key prefix for the restore when no exact key matches, in order of preference")
+		flags.BoolVar(&transfer.SkipNonEmpty, "skip-non-empty", false, "Skip the restore if the directory has files")
+	}
+	for _, name := range []string{"directory", "key", "runtime-token-file", "results-url-file"} {
+		command.MarkFlagRequired(name)
+	}
 	return command
 }
 
-func (o *archiveCommandOptions) addFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&o.directory, "directory", "", "Directory to archive or restore")
-	flags.StringVar(&o.urlFile, "url-file", "", "File containing the signed Azure Blob URL")
+// runTransfer runs transfer with the GitHub Actions cache.
+func runTransfer(ctx context.Context, log *slog.Logger, transfer frontend.Transfer) error {
+	runtimeToken, err := readSecretFile(transfer.RuntimeTokenFile)
+	if err != nil {
+		return err
+	}
+	resultsURL, err := readSecretFile(transfer.ResultsURLFile)
+	if err != nil {
+		return err
+	}
+	githubCache, err := actionscache.NewClient(resultsURL, runtimeToken)
+	if err != nil {
+		return fmt.Errorf("create GitHub cache client: %w", err)
+	}
+	log = log.With(slog.String("key", transfer.Key))
+	if transfer.Operation == frontend.Restore {
+		return restoreDirectory(ctx, log, githubCache, transfer)
+	}
+	return saveDirectory(ctx, log, githubCache, transfer)
 }
 
-func (o *archiveCommandOptions) validate() error {
-	if o.directory == "" {
-		return fmt.Errorf("directory is empty")
+func restoreDirectory(ctx context.Context, log *slog.Logger, githubCache *actionscache.Client, transfer frontend.Transfer) error {
+	if transfer.SkipNonEmpty {
+		empty, err := isEmptyDirectory(transfer.Directory)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			log.InfoContext(ctx, "skipped non-empty cache mount")
+			return nil
+		}
 	}
-	if o.urlFile == "" {
-		return fmt.Errorf("url-file is empty")
+	matchedKey, downloadURL, err := githubCache.LookupArchive(ctx, log, transfer.Key, transfer.RestoreKeys)
+	if err != nil {
+		return fmt.Errorf("lookup cache archive: %w", err)
 	}
+	if downloadURL == "" {
+		log.InfoContext(ctx, "cache entry not found")
+		return nil
+	}
+	if err := cachearchive.Download(ctx, transfer.Directory, downloadURL); err != nil {
+		return fmt.Errorf("restore cache entry %q: %w", matchedKey, err)
+	}
+	log.InfoContext(ctx, "restored cache mount", slog.String("matched_key", matchedKey))
 	return nil
 }
 
-func uploadArchive(ctx context.Context, options *archiveCommandOptions, output io.Writer) error {
-	uploadURL, err := readSignedURL(options.urlFile)
+func saveDirectory(ctx context.Context, log *slog.Logger, githubCache *actionscache.Client, transfer frontend.Transfer) error {
+	empty, err := isEmptyDirectory(transfer.Directory)
 	if err != nil {
 		return err
 	}
-	size, err := cachearchive.Upload(ctx, options.directory, uploadURL)
+	if empty {
+		log.InfoContext(ctx, "skipped empty cache mount")
+		return nil
+	}
+	uploadURL, err := githubCache.ReserveArchive(ctx, log, transfer.Key)
+	if err != nil {
+		return fmt.Errorf("reserve cache archive: %w", err)
+	}
+	if uploadURL == "" {
+		log.InfoContext(ctx, "cache entry exists or is reserved")
+		return nil
+	}
+	compressedSize, err := cachearchive.Upload(ctx, transfer.Directory, uploadURL)
 	if err != nil {
 		return err
 	}
-	if err := json.NewEncoder(output).Encode(cachearchive.UploadResult{CompressedSize: size}); err != nil {
-		return fmt.Errorf("write archive upload result: %w", err)
+	if err := githubCache.FinalizeArchive(ctx, log, transfer.Key, compressedSize); err != nil {
+		return fmt.Errorf("finalize cache archive: %w", err)
 	}
+	log.InfoContext(ctx, "saved cache mount", slog.Int64("compressed_size_bytes", compressedSize))
 	return nil
 }
 
-func downloadArchive(ctx context.Context, options *archiveCommandOptions, _ io.Writer) error {
-	downloadURL, err := readSignedURL(options.urlFile)
+// readSecretFile returns the contents of the file path without a trailing newline.
+func readSecretFile(path string) (string, error) {
+	contents, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("read secret file: %w", err)
 	}
-	return cachearchive.Download(ctx, options.directory, downloadURL)
+	secret := strings.TrimSuffix(string(contents), "\n")
+	if secret == "" {
+		return "", fmt.Errorf("secret file %s is empty", path)
+	}
+	return secret, nil
 }
 
-func readSignedURL(filePath string) (string, error) {
-	file, err := os.Open(filePath)
+func isEmptyDirectory(directory string) (bool, error) {
+	file, err := os.Open(directory)
 	if err != nil {
-		return "", fmt.Errorf("open signed URL file: %w", err)
+		return false, fmt.Errorf("open cache mount: %w", err)
 	}
 	defer file.Close()
-	contents, err := io.ReadAll(io.LimitReader(file, maximumSignedURLSize+1))
-	if err != nil {
-		return "", fmt.Errorf("read signed URL file: %w", err)
+	if _, err := file.Readdirnames(1); err != nil {
+		if errors.Is(err, io.EOF) {
+			return true, nil
+		}
+		return false, fmt.Errorf("read cache mount: %w", err)
 	}
-	if len(contents) > maximumSignedURLSize {
-		return "", fmt.Errorf("signed URL exceeds %d bytes", maximumSignedURLSize)
-	}
-	contents = bytes.TrimSuffix(contents, []byte("\n"))
-	if len(contents) == 0 {
-		return "", fmt.Errorf("signed URL file is empty")
-	}
-	if bytes.ContainsAny(contents, "\r\n\x00") {
-		return "", fmt.Errorf("signed URL contains an invalid character")
-	}
-	return string(contents), nil
+	return false, nil
 }

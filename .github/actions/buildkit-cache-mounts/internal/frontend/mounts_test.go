@@ -1,26 +1,25 @@
-package buildkit
+package frontend
 
 import (
-	"log/slog"
 	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/containerd/platforms"
+	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
+	"github.com/moby/buildkit/frontend/dockerui"
 	"github.com/moby/buildkit/solver/pb"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 func TestCacheMountIdentityHash(t *testing.T) {
 	inputDigest := "sha256:input"
-	base := Mount{id: "/cache-id", sharing: pb.CacheSharingOpt_SHARED, inputDigest: inputDigest, inputIndex: 1, selector: "/a"}
-	if base.IdentityHash() != (Mount{id: base.id, sharing: pb.CacheSharingOpt_LOCKED, inputDigest: inputDigest, inputIndex: 1, selector: "/b"}).IdentityHash() {
+	base := cacheMount{id: "/cache-id", sharing: pb.CacheSharingOpt_SHARED, inputDigest: inputDigest, inputIndex: 1, selector: "/a"}
+	if base.IdentityHash() != (cacheMount{id: base.id, sharing: pb.CacheSharingOpt_LOCKED, inputDigest: inputDigest, inputIndex: 1, selector: "/b"}).IdentityHash() {
 		t.Fatal("sharing or selector changed cache identity")
 	}
-	for _, different := range []Mount{
+	for _, different := range []cacheMount{
 		{id: "/other", sharing: base.sharing, inputDigest: base.inputDigest, inputIndex: base.inputIndex},
 		{id: base.id, sharing: base.sharing, inputDigest: "sha256:other", inputIndex: 1},
 		{id: base.id, sharing: base.sharing, inputDigest: inputDigest, inputIndex: 2},
@@ -55,24 +54,23 @@ RUN --mount=type=cache,id=unused,target=/unused true
 FROM build AS final
 RUN --mount=type=cache,id=final,target=/final true
 `
-	file := filepath.Join(t.TempDir(), "Dockerfile")
-	if err := os.WriteFile(file, []byte(dockerfile), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	for _, namespace := range []string{"", "team/cache"} {
 		t.Run("namespace="+namespace, func(t *testing.T) {
-			mounts, err := cacheMountsFromDockerfile(t.Context(), slog.New(slog.DiscardHandler), nil, file, ocispecs.Platform{OS: "linux", Architecture: "amd64"}, nil, "final", map[string]string{
-				"CACHE_PREFIX":            "ci",
-				"BUILDKIT_CACHE_MOUNT_NS": namespace,
-			})
+			opt := testConvertOpt(map[string]string{"CACHE_PREFIX": "ci"})
+			opt.CacheIDNamespace = namespace
+			opt.Target = "final"
+			mounts, localInputIDs, err := cacheMountsFromDockerfile(t.Context(), []byte(dockerfile), opt)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if len(mounts) != 6 {
 				t.Fatalf("discovered %d mounts, want 6", len(mounts))
 			}
+			if want := []string{namespace + "/from-context"}; !slices.Equal(localInputIDs, want) {
+				t.Fatalf("mounts with local input are %v, want %v", localInputIDs, want)
+			}
 
-			byID := map[string]Mount{}
+			byID := map[string]cacheMount{}
 			dynamicCount := 0
 			for _, mount := range mounts {
 				id, ok := strings.CutPrefix(mount.id, namespace+"/")
@@ -117,11 +115,6 @@ ARG TARGETARCH
 RUN --mount=type=cache,id=arch-${TARGETARCH},target=/arch true
 RUN --mount=type=cache,id=shared,target=/shared true
 `
-	file := filepath.Join(t.TempDir(), "Dockerfile")
-	if err := os.WriteFile(file, []byte(dockerfile), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	buildPlatform := platforms.MustParse("linux/amd64")
 	tests := []struct {
 		name            string
 		targetPlatforms []ocispecs.Platform
@@ -138,13 +131,15 @@ RUN --mount=type=cache,id=shared,target=/shared true
 		t.Run(test.name, func(t *testing.T) {
 			// Without a frontend client, Dockerfile2LLB deletes SOURCE_DATE_EPOCH=context from its build arguments.
 			buildArgs := map[string]string{"SOURCE_DATE_EPOCH": "context"}
-			mounts, err := cacheMountsFromDockerfile(t.Context(), slog.New(slog.DiscardHandler), nil, file, buildPlatform, test.targetPlatforms, "", buildArgs)
+			opt := testConvertOpt(buildArgs)
+			opt.TargetPlatforms = test.targetPlatforms
+			mounts, _, err := cacheMountsFromDockerfile(t.Context(), []byte(dockerfile), opt)
 			if err != nil {
 				t.Fatal(err)
 			}
 			ids := make([]string, len(mounts))
 			for index, mount := range mounts {
-				ids[index] = mount.ID()
+				ids[index] = mount.id
 			}
 			if !slices.Equal(ids, test.wantIDs) {
 				t.Fatalf("discovered mount IDs %v, want %v", ids, test.wantIDs)
@@ -153,5 +148,17 @@ RUN --mount=type=cache,id=shared,target=/shared true
 				t.Fatalf("build arguments changed to %v", buildArgs)
 			}
 		})
+	}
+}
+
+// testConvertOpt returns the conversion options of a build on linux/amd64 with buildArgs and without a frontend client.
+func testConvertOpt(buildArgs map[string]string) dockerfile2llb.ConvertOpt {
+	llbCaps := pb.Caps.CapSet(pb.Caps.All())
+	return dockerfile2llb.ConvertOpt{
+		LLBCaps: &llbCaps,
+		Config: dockerui.Config{
+			BuildArgs:      buildArgs,
+			BuildPlatforms: []ocispecs.Platform{platforms.MustParse("linux/amd64")},
+		},
 	}
 }
