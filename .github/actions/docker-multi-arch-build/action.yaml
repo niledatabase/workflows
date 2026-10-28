@@ -105,23 +105,6 @@ runs:
       id: setup-buildx
       uses: docker/setup-buildx-action@v4
 
-    - name: Restore Docker cache mounts
-      id: cache-mounts
-      uses: actions/cache@v6
-      with:
-        path: ${{ runner.temp }}/buildkit-cache-mounts
-        key: buildkit-cache-mounts-${{ runner.arch }}-${{ inputs.repository }}-${{ inputs.cache-suffix }}-${{ github.sha }}
-        restore-keys: |
-          buildkit-cache-mounts-${{ runner.arch }}-${{ inputs.repository }}-${{ inputs.cache-suffix }}-
-
-    - name: Inject Docker cache mounts
-      uses: reproducible-containers/buildkit-cache-dance@v3
-      with:
-        builder: ${{ steps.setup-buildx.outputs.name }}
-        cache-dir: ${{ runner.temp }}/buildkit-cache-mounts
-        dockerfile: ${{ inputs.file }}
-        skip-extraction: ${{ steps.cache-mounts.outputs.cache-hit }}
-
     - name: Generate registry cache configuration
       id: registry_cache
       uses: actions/github-script@v9
@@ -149,10 +132,17 @@ runs:
         labels: ${{ steps.meta.outputs.labels }}
         tags: ${{ inputs.push-by-digest == 'false' && steps.meta.outputs.tags || '' }}
         annotations: ${{ steps.meta.outputs.annotations }}
-        build-args: ${{ inputs.build-args }}
+        build-args: |
+          BUILDKIT_SYNTAX=ghcr.io/niledatabase/buildkit-cache-mounts@sha256:bb487ff01355613140e66a3920654da63d096b7ae1cae04229b1abc672444248
+          BUILDKIT_CACHE_MOUNTS_KEY=${{ runner.arch }}-${{ inputs.repository }}-${{ inputs.cache-suffix }}-${{ github.sha }}
+          BUILDKIT_CACHE_MOUNTS_RESTORE_KEYS=${{ runner.arch }}-${{ inputs.repository }}-${{ inputs.cache-suffix }}-
+          ${{ inputs.build-args }}
         target: ${{ inputs.target }}
         provenance: false
         cache-from: ${{ steps.registry_cache.outputs.from }}
         cache-to: ${{ steps.registry_cache.outputs.to }}
         outputs: type=image,"name=${{ inputs.repository }}",push-by-digest=${{ inputs.push-by-digest }},push=${{ inputs.push }}
         secrets: ${{ inputs.build-secrets }}
+        secret-envs: |
+          ACTIONS_RUNTIME_TOKEN=ACTIONS_RUNTIME_TOKEN
+          ACTIONS_RESULTS_URL=ACTIONS_RESULTS_URL
