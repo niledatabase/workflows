@@ -30,6 +30,11 @@ on:
         required: false
         type: string
         default: ''
+      attest:
+        description: 'Attest the build provenance of the image. The calling job must grant the id-token: write and attestations: write permissions'
+        required: false
+        type: boolean
+        default: false
       build-args:
         required: false
         type: string
@@ -126,5 +131,6 @@ jobs:
           repository: ${{ inputs.repository }}
           tags: ${{ inputs.tags }}
           flavor: ${{ inputs.flavor }}
+          attest: ${{ inputs.attest }}
           artifact-digest-pattern: digests-${{ needs.setup.outputs.uuid }}-*
           github-token: ${{ secrets.GITHUB_TOKEN }}

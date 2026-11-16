@@ -74,6 +74,12 @@ runs:
           ${{ inputs.repository }}
         tags: ${{ inputs.tags }}
         flavor: ${{ inputs.flavor }}
+        labels: |
+          dev.thenile.commit.author=${{ github.event.head_commit.author.name }}
+          dev.thenile.build.url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        annotations: |
+          dev.thenile.commit.author=${{ github.event.head_commit.author.name }}
+          dev.thenile.build.url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
     - name: Log into ghcr.io
       if: ${{ inputs.github-token != '' }}
