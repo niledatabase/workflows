@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: .github/actions/buildkit-cache-mounts/go.mod
           cache-dependency-path: .github/actions/buildkit-cache-mounts/go.sum
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: .github/actions/buildkit-cache-mounts/go.mod
           # The verify job runs test code before it saves the Go module and build caches, and Go does not verify cached files.
@@ -83,7 +83,7 @@ jobs:
             bin
           echo "digest=$(jq --raw-output '."containerimage.digest"' "$RUNNER_TEMP/image-metadata.json")" >> "$GITHUB_OUTPUT"
       - name: Attest image
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.image.outputs.digest }}
