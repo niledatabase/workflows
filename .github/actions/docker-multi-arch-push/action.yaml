@@ -17,6 +17,10 @@ inputs:
       type=sha,suffix=-{{branch}}-{{commit_date 'X'}},enable={{is_default_branch}}
       type=sha,prefix={{branch}}-sha-,suffix=-ts-{{commit_date 'X'}},enable={{is_default_branch}}
       type=sha,format=long
+  tag-prefixes:
+    description: 'Prefixes for the tags, one per line. Each tag is published one time for each prefix'
+    required: false
+    default: ''
   flavor:
     description: 'Flavor input forwarded to docker/metadata-action (latest=, prefix=, suffix=)'
     required: false
@@ -82,6 +86,7 @@ runs:
       uses: actions/github-script@v9
       env:
         REPOSITORY: ${{ inputs.repository }}
+        TAG_PREFIXES: ${{ inputs.tag-prefixes }}
       with:
         script: |
           const fs = require('node:fs')
@@ -90,10 +95,13 @@ runs:
 
           const repository = process.env.REPOSITORY
           const metadata = JSON.parse(process.env.DOCKER_METADATA_OUTPUT_JSON)
+          const prefixes = process.env.TAG_PREFIXES.split(/\s+/).filter(Boolean)
+          // docker/metadata-action has one prefix for each step, and type=sha ignores it.
+          const tags = metadata.tags.flatMap(tag => prefixes.length === 0 ? [tag] : prefixes.map(prefix => tag.replace(/:(?=[^:]+$)/, `:${prefix}`)))
           const resultFile = path.join(process.env.RUNNER_TEMP, 'imagetools-create-result.json')
           const args = [
             'buildx', 'imagetools', 'create', '--metadata-file', resultFile,
-            ...metadata.tags.flatMap(tag => ['--tag', tag]),
+            ...tags.flatMap(tag => ['--tag', tag]),
             // Annotations without a value are skipped.
             ...metadata.annotations.filter(annotation => /=./.test(annotation)).flatMap(annotation => ['--annotation', annotation]),
             ...fs.readdirSync(path.join(process.env.RUNNER_TEMP, 'digests')).map(digest => `${repository}@sha256:${digest}`),

@@ -26,6 +26,11 @@ on:
           type=sha,suffix=-{{branch}}-{{commit_date 'X'}},enable={{is_default_branch}}
           type=sha,prefix={{branch}}-sha-,suffix=-ts-{{commit_date 'X'}},enable={{is_default_branch}}
           type=sha,format=long
+      tag-prefixes:
+        description: 'Prefixes for the tags, one per line. Each tag is published one time for each prefix'
+        required: false
+        type: string
+        default: ''
       flavor:
         required: false
         type: string
@@ -130,6 +135,7 @@ jobs:
         with:
           repository: ${{ inputs.repository }}
           tags: ${{ inputs.tags }}
+          tag-prefixes: ${{ inputs.tag-prefixes }}
           flavor: ${{ inputs.flavor }}
           attest: ${{ inputs.attest }}
           artifact-digest-pattern: digests-${{ needs.setup.outputs.uuid }}-*
